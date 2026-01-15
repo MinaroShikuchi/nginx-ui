@@ -57,7 +57,22 @@ func main() {
 	flag.Parse()
 
 	// 1. Initialize Nginx Manager
+	log.Printf("Scanning Directory for Nginx configs: %s", *configDir)
+	log.Printf("Directory for enabled Nginx configs: %s", *enabledDir)
 	mgr := nginx.NewManager(*configDir, *enabledDir, *archivedDir, *nginxBin, *mainConfig)
+
+	if sites, err := mgr.GetSites(); err == nil {
+		log.Printf("Found %d available configurations:", len(sites))
+		for _, site := range sites {
+			status := "Disabled"
+			if site.IsEnabled {
+				status = "Enabled"
+			}
+			log.Printf(" - %s [%s]", site.Name, status)
+		}
+	} else {
+		log.Printf("Error scanning sites: %v", err)
+	}
 
 	// 2. Start Autodiscovery Watcher
 	watcher := discovery.NewWatcher(mgr, *appsDir, *nginxPort)

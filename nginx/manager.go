@@ -2,11 +2,13 @@ package nginx
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -151,6 +153,101 @@ func (m *Manager) parseServerBlock(block config.IBlock) (string, string, bool) {
 	return fmt.Sprintf("http://127.0.0.1:%s", port), domain, hasSSL
 }
 
+// GetProxyTarget parses the config to find the proxy_pass directive
+// Returns protocol, hostname, port, and error
+func (m *Manager) GetProxyTarget(filename string) (string, string, int, error) {
+	path := m.resolvePath(filename)
+	p, err := parser.NewParser(path)
+	if err != nil {
+		return "", "", 0, err
+	}
+	conf, err := p.Parse()
+	if err != nil {
+		return "", "", 0, err
+	}
+
+	var findProxyPass func(block config.IBlock) (string, error)
+	findProxyPass = func(block config.IBlock) (string, error) {
+		for _, d := range block.GetDirectives() {
+			if d.GetName() == "location" {
+				// Search inside location block
+				if d.GetBlock() != nil {
+					for _, ld := range d.GetBlock().GetDirectives() {
+						if ld.GetName() == "proxy_pass" {
+							if len(ld.GetParameters()) > 0 {
+								return ld.GetParameters()[0].Value, nil
+							}
+						}
+					}
+				}
+			}
+			// Recursive search if nested (though strictly proxy_pass is usually in location)
+			if d.GetBlock() != nil {
+				if res, err := findProxyPass(d.GetBlock()); err == nil {
+					return res, nil
+				}
+			}
+		}
+		return "", fmt.Errorf("proxy_pass not found")
+	}
+
+	// Search in http -> server context
+	for _, d := range conf.Block.Directives {
+		if d.GetName() == "server" {
+			if target, err := findProxyPass(d.GetBlock()); err == nil {
+				return parseProxyUrl(target)
+			}
+		}
+		if d.GetName() == "http" {
+			if d.GetBlock() != nil {
+				for _, hDirective := range d.GetBlock().GetDirectives() {
+					if hDirective.GetName() == "server" {
+						if target, err := findProxyPass(hDirective.GetBlock()); err == nil {
+							return parseProxyUrl(target)
+						}
+					}
+				}
+			}
+		}
+	}
+	return "", "", 0, fmt.Errorf("no proxy target found")
+}
+
+func parseProxyUrl(rawUrl string) (string, string, int, error) {
+	// Expected formats: http://localhost:3000, http://127.0.0.1:8080
+	// Strip trailing slash/path if any (simple implementation)
+	// We only want the root
+
+	// Remove variable references if simple ones exist like $host, but for reverse discovery we assume simple static for now
+	// or best effort.
+
+	// Check for protocol
+	protocol := "http"
+	if strings.HasPrefix(rawUrl, "https://") {
+		protocol = "https"
+		rawUrl = strings.TrimPrefix(rawUrl, "https://")
+	} else {
+		rawUrl = strings.TrimPrefix(rawUrl, "http://")
+	}
+
+	// Split host and port
+	host, portStr, err := net.SplitHostPort(rawUrl)
+	if err != nil {
+		// Maybe no port specified, default to 80 (or just return error if we expect port)
+		// Try to handle "localhost" -> localhost, 0? Or assume 80?
+		// For our AppManifest, we need a port.
+		// If strings.Contains(rawUrl, ":") failed, maybe it's just host.
+		return protocol, rawUrl, 80, nil
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return protocol, host, 80, nil
+	}
+
+	return protocol, host, port, nil
+}
+
 // GetSites returns a list of active configurations with health checks
 func (m *Manager) GetSites() ([]SiteInfo, error) {
 	files, err := os.ReadDir(m.ConfigDir)
@@ -161,7 +258,9 @@ func (m *Manager) GetSites() ([]SiteInfo, error) {
 
 	if err == nil {
 		for _, f := range files {
-			if !f.IsDir() && strings.HasSuffix(f.Name(), ".conf") {
+			if !f.IsDir() && !strings.HasPrefix(f.Name(), ".") {
+				// Accept all non-hidden, non-directory files
+				// Many systems use extensionless files in sites-available
 				rawSites = append(rawSites, f.Name())
 			}
 		}

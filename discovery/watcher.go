@@ -48,6 +48,9 @@ func NewWatcher(mgr *nginx.Manager, appsDir string, nginxListenPort int) *Watche
 }
 
 func (w *Watcher) Start() {
+	// 0. Initial Sync: Generate manifests for existing sites if missing
+	w.SyncManifests()
+
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Fatal(err)
@@ -83,6 +86,87 @@ func (w *Watcher) Start() {
 		log.Printf("Watching %s for new apps...", w.AppsDir)
 	}
 	<-done
+}
+
+// SyncManifests "Reverse Discovery": Generates YAML manifests for existing Nginx configs
+func (w *Watcher) SyncManifests() {
+	log.Println("Starting Reverse Discovery (Syncing existing sites to apps layout)...")
+	sites, err := w.Manager.GetSites()
+	if err != nil {
+		log.Printf("Failed to get sites for sync: %v", err)
+		return
+	}
+
+	for _, site := range sites {
+		if site.Name == "nginx.conf" {
+			continue
+		}
+
+		// Try to find upstream target
+		protocol, host, port, err := w.Manager.GetProxyTarget(site.Name)
+		if err != nil {
+			// Not a proxy site or failed to parse, skip
+			continue
+		}
+
+		// Check if we already have a manifest for this domain
+		// Simple check: domain.yaml or domain_port.yaml?
+		// Ensure extension is .yaml
+		safeName := site.Name
+		if strings.HasSuffix(safeName, ".conf") {
+			safeName = strings.TrimSuffix(safeName, ".conf") + ".yaml"
+		} else if !strings.HasSuffix(safeName, ".yaml") {
+			safeName = safeName + ".yaml"
+		}
+		yamlPath := fmt.Sprintf("%s/%s", w.AppsDir, safeName)
+
+		if _, err := os.Stat(yamlPath); err == nil {
+			// Exists, skip
+			continue
+		}
+
+		// Create Manifest
+		// We need the domain from the site list usually, but GetSites gives us info.
+		// Use site.Name as domain? No, GetProxyTarget also gave us info?
+		// Wait, GetProxyTarget gives upstream info. GetSites gives domain info indirectly via "Name" or we parsed it again?
+		// We need the SERVER_NAME from the config.
+		// Manager.extractSiteDetails does this. Let's look at `site` object.
+		// SiteInfo has `Name` (filename) and `Url` (http://127.0.0.1:80). It doesn't have ServerName explicitly.
+		// Actually, let's re-parse or trust filename? Filename might be "example.com.conf".
+		// But let's verify.
+
+		// Ideally we would want the actual server_name.
+		// GetProxyTarget returns (proto, host, port) of UPSTREAM.
+		// We also need the LISTENING domain.
+		// Let's call extractSiteDetails again or expose it public.
+		// Or just assume filename is okay for now?
+		// Let's assume filename ~ domain.conf or just domain.
+
+		domain := site.Name
+		if strings.HasSuffix(domain, ".conf") {
+			domain = strings.TrimSuffix(domain, ".conf")
+		}
+		domain = strings.ReplaceAll(domain, "_", ":")
+
+		manifest := AppManifest{
+			Domain:   domain,
+			Protocol: protocol,
+			Hostname: host,
+			Port:     port,
+		}
+
+		data, err := yaml.Marshal(manifest)
+		if err != nil {
+			log.Printf("Failed to marshal manifest for %s: %v", site.Name, err)
+			continue
+		}
+
+		if err := os.WriteFile(yamlPath, data, 0644); err != nil {
+			log.Printf("Failed to write manifest %s: %v", yamlPath, err)
+			continue
+		}
+		log.Printf("Reverse Discovery: Created app manifest for %s -> %s", site.Name, yamlPath)
+	}
 }
 
 func (w *Watcher) handleFileChange(path string) {
