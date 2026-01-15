@@ -112,11 +112,9 @@ func (w *Watcher) SyncManifests() {
 		// Check if we already have a manifest for this domain
 		// Simple check: domain.yaml or domain_port.yaml?
 		// Ensure extension is .yaml
-		safeName := site.Name
-		if strings.HasSuffix(safeName, ".conf") {
-			safeName = strings.TrimSuffix(safeName, ".conf") + ".yaml"
-		} else if !strings.HasSuffix(safeName, ".yaml") {
-			safeName = safeName + ".yaml"
+		safeName := strings.TrimSuffix(site.Name, ".conf")
+		if !strings.HasSuffix(safeName, ".yaml") {
+			safeName += ".yaml"
 		}
 		yamlPath := fmt.Sprintf("%s/%s", w.AppsDir, safeName)
 
@@ -142,10 +140,7 @@ func (w *Watcher) SyncManifests() {
 		// Or just assume filename is okay for now?
 		// Let's assume filename ~ domain.conf or just domain.
 
-		domain := site.Name
-		if strings.HasSuffix(domain, ".conf") {
-			domain = strings.TrimSuffix(domain, ".conf")
-		}
+		domain := strings.TrimSuffix(site.Name, ".conf")
 		domain = strings.ReplaceAll(domain, "_", ":")
 
 		manifest := AppManifest{

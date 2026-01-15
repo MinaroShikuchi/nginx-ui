@@ -40,7 +40,7 @@
         v-model="content"
         auto-grow
         variant="plain"
-        class="flex-grow-1 font-mono pa-4"
+        class="font-mono px-4"
         hide-details
         spellcheck="false"
         placeholder="# Custom Nginx config here...
@@ -131,8 +131,5 @@ const save = async () => {
 .font-mono {
   font-family: 'Fira Code', 'Courier New', monospace !important;
   font-size: 13px !important;
-}
-:deep(.v-textarea .v-field__input) {
-  padding: 0 !important;
 }
 </style>

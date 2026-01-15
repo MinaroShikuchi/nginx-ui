@@ -49,6 +49,15 @@
           <span v-else class="text-caption text-grey">N/A</span>
         </template>
 
+        <template v-slot:item.upstream="{ item }">
+          <a v-if="item.upstream" :href="item.upstream" target="_blank" class="d-flex align-center text-decoration-none text-grey-darken-1">
+             <v-icon size="small" icon="mdi-server-network" class="mr-2"></v-icon>
+             <span class="text-caption font-mono">{{ item.upstream }}</span>
+             <v-icon size="x-small" icon="mdi-open-in-new" class="ml-1 opacity-50"></v-icon>
+          </a>
+          <span v-else class="text-caption text-grey">-</span>
+        </template>
+
         <template v-slot:item.isEnabled="{ item }">
           <v-switch
             v-model="item.isEnabled"
@@ -157,6 +166,7 @@ const filteredSites = computed(() => {
 const headers = [
   { title: 'Site Name', key: 'name', align: 'start' },
   { title: 'URL', key: 'url', align: 'start' },
+  { title: 'Upstream (Proxy Target)', key: 'upstream', align: 'start' },
   { title: 'Enabled', key: 'isEnabled', align: 'center', width: '100px' },
   { title: 'SSL', key: 'hasSsl', align: 'center', width: '80px' },
   { title: 'Status', key: 'isActive', align: 'start', width: '120px' },

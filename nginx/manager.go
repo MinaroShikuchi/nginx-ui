@@ -61,6 +61,7 @@ type SiteInfo struct {
 	Name       string `json:"name"`
 	Path       string `json:"path"`
 	Url        string `json:"url"`
+	Upstream   string `json:"upstream"`
 	IsActive   bool   `json:"isActive"`
 	HasSSL     bool   `json:"hasSsl"`
 	IsEnabled  bool   `json:"isEnabled"`
@@ -305,13 +306,32 @@ func (m *Manager) GetSites() ([]SiteInfo, error) {
 				fullPath = m.resolvePath(fname)
 			}
 
-			url, domain, hasSSL := m.extractSiteDetails(fullPath)
+			// url here is the "internal" check URL (http://127.0.0.1:port)
+			checkUrl, domain, hasSSL := m.extractSiteDetails(fullPath)
+
+			// Construct the public display URL
+			displayUrl := checkUrl
+			if domain != "" && domain != "_" {
+				protocol := "http"
+				if hasSSL {
+					protocol = "https"
+				}
+				displayUrl = fmt.Sprintf("%s://%s", protocol, domain)
+			}
+
+			// Try to get Upstream
+			upstreamProto, upstreamHost, upstreamPort, err := m.GetProxyTarget(fname)
+			upstream := ""
+			if err == nil {
+				upstream = fmt.Sprintf("%s://%s:%d", upstreamProto, upstreamHost, upstreamPort)
+			}
+
 			active := false
-			if url != "" {
-				active = m.checkSiteStatus(url, domain)
+			if checkUrl != "" {
+				active = m.checkSiteStatus(checkUrl, domain)
 			} else {
 				// Fallback/Unknown, maybe just a partial config
-				url = "N/A"
+				displayUrl = "N/A"
 			}
 
 			// Check if enabled (symlink exists in EnabledDir)
@@ -330,7 +350,8 @@ func (m *Manager) GetSites() ([]SiteInfo, error) {
 				info: SiteInfo{
 					Name:       fname,
 					Path:       fullPath,
-					Url:        url,
+					Url:        displayUrl,
+					Upstream:   upstream,
 					IsActive:   active,
 					HasSSL:     hasSSL,
 					IsEnabled:  enabled,
