@@ -74,6 +74,7 @@ sudo ./nginx-ui
 | `--nginx-bin` | Path to Nginx binary | `nginx` | `/usr/local/opt/nginx/bin/nginx` |
 | `--nginx-port` | Port for generated Nginx configs | `80` | `8080` |
 | `--main-config` | Path to main `nginx.conf` | `/etc/nginx/nginx.conf` | `/usr/local/etc/nginx/nginx.conf` |
+| `--server` | Disable interactive shortcuts (for services) | `false` | `false` |
 
 ### Interactive Shortcuts
 

@@ -54,6 +54,7 @@ func main() {
 	nginxPort := flag.Int("nginx-port", defNginxPort, "Port for generated Nginx configs to listen on")
 	paramsPort := flag.String("port", "9000", "Port for Nginx Manager Dashboard")
 	mainConfig := flag.String("main-config", defMainConfig, "Path to main nginx.conf")
+	serverMode := flag.Bool("server", false, "Run in server mode (disables interactive shortcuts)")
 	flag.Parse()
 
 	// 1. Initialize Nginx Manager
@@ -82,40 +83,52 @@ func main() {
 	srv := server.NewServer(mgr, *appsDir, frontendFS)
 
 	log.Printf("Starting Nginx Manager on :%s", *paramsPort)
-	log.Println("Interactive Shortcuts: [r] Reload Nginx, [R] Full System Trigger, [q] Quit")
 
-	// Keyboard Shortcuts Goroutine
-	go func() {
-		var input string
-		for {
-			_, err := fmt.Scanln(&input)
-			if err != nil {
-				continue
-			}
-			switch input {
-			case "r":
-				log.Println("Shortcut [r]: Reloading Nginx...")
-				if err := mgr.Reload(); err != nil {
-					log.Printf("Reload failed: %v", err)
-				} else {
-					log.Println("Reload successful")
+	if !*serverMode {
+		log.Println("Interactive Shortcuts: [r] Reload Nginx, [R] Full System Trigger, [q] Quit")
+
+		// Keyboard Shortcuts Goroutine
+		go func() {
+			var input string
+			for {
+				_, err := fmt.Scanln(&input)
+				if err != nil {
+					// Check for EOF or other errors to avoid busy loop
+					if err.Error() == "EOF" {
+						return
+					}
+					// If strict error handling is needed, we might break here too
+					// For now, let's just log and break to be safe against high CPU
+					log.Printf("Input error: %v, stopping interactive mode", err)
+					return
 				}
-			case "R":
-				log.Println("Shortcut [R]: Global System Trigger...")
-				// Force test and reload
-				if err := mgr.TestConfig(); err != nil {
-					log.Printf("Test failed: %v", err)
-				} else if err := mgr.Reload(); err != nil {
-					log.Printf("Reload failed: %v", err)
-				} else {
-					log.Println("System triggered and reloaded successfully")
+				switch input {
+				case "r":
+					log.Println("Shortcut [r]: Reloading Nginx...")
+					if err := mgr.Reload(); err != nil {
+						log.Printf("Reload failed: %v", err)
+					} else {
+						log.Println("Reload successful")
+					}
+				case "R":
+					log.Println("Shortcut [R]: Global System Trigger...")
+					// Force test and reload
+					if err := mgr.TestConfig(); err != nil {
+						log.Printf("Test failed: %v", err)
+					} else if err := mgr.Reload(); err != nil {
+						log.Printf("Reload failed: %v", err)
+					} else {
+						log.Println("System triggered and reloaded successfully")
+					}
+				case "q":
+					log.Println("Quitting...")
+					os.Exit(0)
 				}
-			case "q":
-				log.Println("Quitting...")
-				os.Exit(0)
 			}
-		}
-	}()
+		}()
+	} else {
+		log.Println("Running in Server Mode (Interactive shortcuts disabled)")
+	}
 
 	if err := srv.Router.Run(":" + *paramsPort); err != nil {
 		log.Fatal(err)
